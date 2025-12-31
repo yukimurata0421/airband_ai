@@ -1,0 +1,3 @@
+[submodule "src/RTLSDR-Airband"]
+    path = src/RTLSDR-Airband
+    url = https://github.com/szpajder/RTLSDR-Airband.git
