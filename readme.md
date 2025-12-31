@@ -1,237 +1,191 @@
 # airband_ai
 
-AI-assisted VHF airband monitoring system designed for 24/7 unattended operation
-on Raspberry Pi.
+AI-assisted VHF airband monitoring system designed for continuous operation on Raspberry Pi.
 
-This project intentionally avoids treating AI as a black box and focuses on:
-- deterministic preprocessing (VAD)
-- strict cost control (fail-fast circuit breaker)
-- systemd-based reliability
-- real SDR workflows in production environments
+This project focuses on:
+- reliability over convenience
+- cost control and fail-safe behavior
+- real-world SDR workflows
+- systemd-based 24/7 unattended operation
+
+AI is not treated as a black box.
+Pre-processing, validation, and safe shutdown are prioritized.
 
 ---
 
 ## Overview
 
-airband_ai continuously monitors VHF airband audio captured by RTLSDR-Airband,
-filters noise-only recordings, and transcribes meaningful radio communications
-using the Gemini API.
+airband_ai processes VHF airband audio captured by RTLSDR-Airband and transcribes it using the Gemini API.
 
-The system is designed to:
-- run continuously without human supervision
-- avoid unnecessary API usage
-- stop safely when cost limits are exceeded
-- preserve logs and data for later inspection
+The repository is structured to separate runtime scripts from configuration and assets.
+
+Main components:
+- scripts/main.py  
+  Core processing logic (VAD, Gemini API, logging, filtering).
+- scripts/run_loop.sh  
+  Simple loop wrapper intended for systemd execution.
+- src/RTLSDR-Airband  
+  Upstream RTLSDR-Airband project included as a Git submodule.
+
+Transcription results and processed audio are stored locally.
+Runtime artifacts are intentionally excluded from the repository.
 
 ---
 
 ## Architecture
 
-```
-RTL-SDR
-  |
-  v
-RTLSDR-Airband (submodule)
-  |
-  v
-RAM Disk (/dev/shm/airband_ai_proc)
-  |
-  v
-airband_ai (main.py)
-  ├─ VAD (vad_filter.py)
-  ├─ Cost Guard (cost_guard.py)
-  ├─ Gemini API
-  |
-  +--> transcripts/YYYY-MM-DD/*.txt
-  +--> recording/processed/*.mp3
-  |
-  +--> Discord (emergency only)
-```
+RTL-SDR dongle
+  -> RTLSDR-Airband (submodule)
+     -> MP3 files written to RAM disk
+        -> scripts/main.py
+           - VAD (noise/silence removal)
+           - CostGuard (daily cost limit)
+           - Gemini API transcription
+           -> transcripts/YYYY-MM-DD/*.txt
+           -> recording/processed/*.mp3
+
+Optional:
+- Discord webhook notification for emergency-like content
+- systemd for 24/7 operation and auto-restart
 
 ---
 
-## Key Design Decisions
+## RAM Disk Usage
 
-### RAM Disk Usage
+Incoming audio files are expected to appear in:
 
-Incoming audio files are written to a RAM disk:
-
-```
 /dev/shm/airband_ai_proc
-```
+
+This RAM disk approach:
+- reduces SD card wear
+- improves I/O performance
+- avoids unnecessary writes for temporary files
+
+---
+
+## Cost Guard
+
+CostGuard tracks daily Gemini API usage and enforces a hard cost limit.
+
+Behavior:
+- cost is tracked per day in local state
+- once the limit is exceeded, the process exits immediately
+- exit code: 42 (intended for systemd RestartPreventExitStatus)
+
+This ensures:
+- no unexpected API charges
+- fail-fast behavior
+- predictable operational cost
+
+---
+
+## Why Not Whisper
+
+Offline ASR solutions such as Whisper are intentionally avoided.
 
 Reasons:
-- avoid SD card wear
-- faster I/O
-- corrupted temporary files are discarded on reboot
+- high CPU and RAM usage on Raspberry Pi
+- reduced system stability under continuous operation
+- increased complexity for recovery and monitoring
+
+This project offloads ASR to an external API by design.
 
 ---
 
-### Custom VAD (No Whisper)
+## Getting Started (Raspberry Pi / Debian)
 
-This project does not use Whisper locally.
+### 1) Clone with submodules
 
-Reasons:
-- Raspberry Pi CPU and RAM constraints
-- long inference time
-- system instability under load
-
-Instead, a lightweight RMS-based VAD is used to:
-- discard silence and noise-only recordings
-- reduce API usage
-- keep behavior deterministic
-
----
-
-### Cost Guard (Fail-Fast)
-
-API usage is strictly controlled by cost_guard.py.
-
-- daily cost is tracked persistently
-- once the configured limit is exceeded:
-  - a Discord notification is sent
-  - the process exits immediately (exit code 42)
-  - systemd prevents restart
-
-This guarantees no runaway billing.
-
----
-
-### systemd-First Design
-
-The application does not attempt self-recovery.
-
-Responsibilities are clearly separated:
-- application: detect abnormal states and exit
-- systemd: restart, stop, or hold the service
-
-This keeps failure modes explicit and predictable.
-
----
-
-## Repository Structure
-
-```
-airband_ai/
-├─ main.py
-├─ vad_filter.py
-├─ cost_guard.py
-├─ run_loop.sh
-├─ requirements-min.txt
-├─ README.md
-├─ src/
-│  └─ RTLSDR-Airband/   (git submodule)
-```
-
-Notes:
-- src/RTLSDR-Airband is managed as a git submodule
-- runtime artifacts are intentionally excluded from Git
-
----
-
-## Installation
-
-### Clone with submodule
-
-```
-git clone --recurse-submodules https://github.com/your-account/airband_ai.git
+git clone --recurse-submodules https://github.com/yukimurata0421/airband_ai.git
 cd airband_ai
-```
 
-If already cloned:
+If already cloned without submodules:
 
-```
 git submodule update --init --recursive
-```
 
 ---
 
-### OS Dependencies
+### 2) OS dependency
 
-```
+ffmpeg is required for audio processing.
+
 sudo apt update
 sudo apt install -y ffmpeg
-```
 
 ---
 
-### Python Environment
+### 3) Python virtual environment (minimal)
 
-```
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements-min.txt
-```
 
 ---
 
-## Configuration
+### 4) Configure secrets (recommended for systemd)
 
-Runtime secrets are not stored in the repository.
+Create the environment file:
 
-Recommended location:
-
-```
 /etc/airband_ai/airband_ai.env
-```
 
 Example:
 
-```
 GEMINI_API_KEY=your_api_key_here
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-```
+DISCORD_WEBHOOK_URL=optional_webhook_url
 
 ---
 
-## systemd Example
+### 5) Manual test run
 
-```
-[Unit]
-Description=Airband AI (VHF Airband Transcription Daemon)
-After=network-online.target
-Wants=network-online.target
+For manual testing, run scripts/main.py directly:
 
-[Service]
-Type=simple
-User=yuki
-Group=yuki
-WorkingDirectory=/home/yuki/projects/airband_ai
-EnvironmentFile=/etc/airband_ai/airband_ai.env
-
-ExecStart=/home/yuki/projects/airband_ai/venv/bin/python3 \
-  /home/yuki/projects/airband_ai/main.py \
+source venv/bin/activate
+python3 scripts/main.py \
   --input_dir /dev/shm/airband_ai_proc \
-  --output_dir /home/yuki/projects/airband_ai/recording/processed
+  --output_dir ./recording/processed
 
-Restart=on-failure
-RestartPreventExitStatus=42
-RestartSec=10
+RTLSDR-Airband must be configured separately to write MP3 files into:
 
-[Install]
-WantedBy=multi-user.target
-```
+/dev/shm/airband_ai_proc
 
 ---
 
-## Emergency Detection
+## systemd Operation
 
-Discord notifications are sent only when emergency-like content is detected:
-- 121.5 MHz
-- Mayday / Pan-pan
-- Squawk 7700
+For unattended 24/7 operation, scripts/run_loop.sh is intended to be executed by systemd.
 
-Routine traffic does not generate notifications.
+A sample systemd unit file is documented separately.
+Key design points:
+- automatic restart on failure
+- safe shutdown when CostGuard triggers
+- no dependency on interactive shells
 
 ---
 
-## Legal Notice
+## Repository Policy
 
-This project is for educational and experimental purposes only.
-Users are responsible for complying with local radio and privacy laws.
+The following are intentionally excluded from version control:
+- virtual environments (venv/)
+- environment files (.env)
+- runtime logs
+- transcripts and recordings
+- cost tracking state
+
+This keeps the repository reproducible and safe to publish.
+
+---
+
+## Known Limitations
+
+- VAD is RMS-based and may require tuning depending on SDR gain and noise floor.
+- Audio classification is conservative by design (false negatives preferred).
+- No offline ASR support.
 
 ---
 
 ## License
 
-MIT License
+MIT License.
+
+This project is provided as-is for educational and experimental purposes.
+Users are responsible for complying with local radio and privacy regulations.
