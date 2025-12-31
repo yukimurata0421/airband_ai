@@ -32,21 +32,30 @@ Runtime artifacts are intentionally excluded from the repository.
 
 ---
 
-## Architecture
+Architecture
 
 RTL-SDR dongle
-  -> RTLSDR-Airband (submodule)
-     -> MP3 files written to RAM disk
-        -> scripts/main.py
-           - VAD (noise/silence removal)
-           - CostGuard (daily cost limit)
-           - Gemini API transcription
-           -> transcripts/YYYY-MM-DD/*.txt
-           -> recording/processed/*.mp3
+  |
+  v
+RTLSDR-Airband (git submodule)
+  |
+  v
+MP3 files written to RAM disk
+  Path: /dev/shm/airband_ai_proc
+  |
+  v
+scripts/main.py
+  - VAD (noise / silence removal)
+  - CostGuard (daily cost limit, exit code 42)
+  - Gemini API transcription
+  |
+  +--> transcripts/YYYY-MM-DD/*.txt
+  |
+  +--> recording/processed/*.mp3
 
 Optional:
-- Discord webhook notification for emergency-like content
-- systemd for 24/7 operation and auto-restart
+  - Discord webhook notification (emergency-like content only)
+  - systemd for 24/7 operation and auto-restart
 
 ---
 
