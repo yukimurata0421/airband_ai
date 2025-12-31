@@ -1,232 +1,237 @@
-Airband AI
+# airband_ai
 
-Airband AI is a 24/7 unattended VHF airband monitoring system designed for Raspberry Pi and real-world SDR operation.
+AI-assisted VHF airband monitoring system designed for 24/7 unattended operation
+on Raspberry Pi.
 
-The system continuously receives airband audio, removes noise using a lightweight VAD, transcribes speech via the Gemini API, and fails safely when limits or errors are reached.
+This project intentionally avoids treating AI as a black box and focuses on:
+- deterministic preprocessing (VAD)
+- strict cost control (fail-fast circuit breaker)
+- systemd-based reliability
+- real SDR workflows in production environments
 
-This project intentionally avoids treating AI as a black box and instead prioritizes reliability, cost safety, and verifiable logs suitable for long-term unattended operation.
+---
 
-Key Features
+## Overview
 
-Continuous VHF airband reception using RTL-SDR
+airband_ai continuously monitors VHF airband audio captured by RTLSDR-Airband,
+filters noise-only recordings, and transcribes meaningful radio communications
+using the Gemini API.
 
-RAM disk based audio ingestion to protect SD cards
+The system is designed to:
+- run continuously without human supervision
+- avoid unnecessary API usage
+- stop safely when cost limits are exceeded
+- preserve logs and data for later inspection
 
-Custom RMS-based VAD without heavy ML models
+---
 
-Gemini API transcription with strict cost control
+## Architecture
 
-Cost Circuit Breaker with fail-fast behavior
+```
+RTL-SDR
+  |
+  v
+RTLSDR-Airband (submodule)
+  |
+  v
+RAM Disk (/dev/shm/airband_ai_proc)
+  |
+  v
+airband_ai (main.py)
+  ├─ VAD (vad_filter.py)
+  ├─ Cost Guard (cost_guard.py)
+  ├─ Gemini API
+  |
+  +--> transcripts/YYYY-MM-DD/*.txt
+  +--> recording/processed/*.mp3
+  |
+  +--> Discord (emergency only)
+```
 
-Emergency-only Discord notifications
+---
 
-Designed for 24/7 unattended operation
+## Key Design Decisions
 
-Overview
+### RAM Disk Usage
 
-RTLSDR-Airband captures airband audio and writes MP3 files to a RAM disk.
-main.py runs as a long-lived daemon under systemd.
-Audio is filtered by VAD before being sent to Gemini.
-Transcripts are stored by date and channel.
-Emergency-like transmissions trigger Discord notifications.
-When cost limits are exceeded, the system stops safely and does not restart automatically.
+Incoming audio files are written to a RAM disk:
 
-Architecture
-
-RTL-SDR Dongle
-→ RTLSDR-Airband
-→ RAM Disk (/dev/shm/airband_ai_proc)
-→ systemd (airband-ai.service)
-→ main.py
-
-VAD
-
-Cost Guard
-
-Gemini API
-→ Transcripts (YYYY-MM-DD)
-→ Processed Audio
-→ Discord Notification (optional)
-
-Directory Layout
-
-Project directory:
-
-/home/yuki/projects/airband_ai
-
-main.py
-
-cost_guard.py
-
-vad_filter.py
-
-venv/
-
-transcripts/YYYY-MM-DD/
-
-recording/processed/
-
-run.log
-
-System-managed directories:
-
-Persistent state:
-/var/lib/airband_ai
-
-daily_cost.json
-
-Runtime input (RAM disk):
+```
 /dev/shm/airband_ai_proc
-
-RAM Disk Usage
-
-Incoming audio files are written to /dev/shm/airband_ai_proc.
-
-This RAM disk is used to:
-
-Prevent SD card wear on Raspberry Pi
-
-Improve I/O performance for frequent small audio files
-
-Allow safe loss of input data on reboot
-
-All persistent data such as transcripts and cost state are stored outside the RAM disk.
-
-Cost Guard (Circuit Breaker)
-
-Airband AI includes a hard cost circuit breaker.
-
-The Cost Guard:
-
-Tracks daily Gemini API usage in JPY
-
-Persists state under /var/lib/airband_ai
-
-Uses atomic file writes to prevent corruption
-
-Exits with a dedicated exit code (42) when the daily limit is exceeded
-
-When the limit is reached:
-
-A single Discord notification is sent
-
-The process exits safely
-
-systemd does not restart the service
-
-Human intervention is required to resume operation
-
-This guarantees that runaway API costs cannot occur.
-
-Why Not Whisper (Local ASR)
-
-Local ASR models such as Whisper are intentionally not used.
+```
 
 Reasons:
+- avoid SD card wear
+- faster I/O
+- corrupted temporary files are discarded on reboot
 
-High CPU and memory usage on Raspberry Pi
+---
 
-Reduced stability for long-term operation
+### Custom VAD (No Whisper)
 
-Difficulty in enforcing strict cost ceilings
+This project does not use Whisper locally.
 
-This project prefers lightweight local signal processing and controlled external AI usage.
+Reasons:
+- Raspberry Pi CPU and RAM constraints
+- long inference time
+- system instability under load
 
-Getting Started
+Instead, a lightweight RMS-based VAD is used to:
+- discard silence and noise-only recordings
+- reduce API usage
+- keep behavior deterministic
 
-Requirements:
+---
 
-Raspberry Pi with Debian-based OS
+### Cost Guard (Fail-Fast)
 
-RTL-SDR dongle
+API usage is strictly controlled by cost_guard.py.
 
-rtl_airband (RTLSDR-Airband)
+- daily cost is tracked persistently
+- once the configured limit is exceeded:
+  - a Discord notification is sent
+  - the process exits immediately (exit code 42)
+  - systemd prevents restart
 
-ffmpeg
+This guarantees no runaway billing.
 
-Python 3.9 or newer
+---
 
-Internet connection for Gemini API
+### systemd-First Design
 
-Installation
+The application does not attempt self-recovery.
 
-Clone the repository with submodules:
+Responsibilities are clearly separated:
+- application: detect abnormal states and exit
+- systemd: restart, stop, or hold the service
 
-git clone --recurse-submodules https://github.com/yourname/airband_ai.git
+This keeps failure modes explicit and predictable.
 
+---
+
+## Repository Structure
+
+```
+airband_ai/
+├─ main.py
+├─ vad_filter.py
+├─ cost_guard.py
+├─ run_loop.sh
+├─ requirements-min.txt
+├─ README.md
+├─ src/
+│  └─ RTLSDR-Airband/   (git submodule)
+```
+
+Notes:
+- src/RTLSDR-Airband is managed as a git submodule
+- runtime artifacts are intentionally excluded from Git
+
+---
+
+## Installation
+
+### Clone with submodule
+
+```
+git clone --recurse-submodules https://github.com/your-account/airband_ai.git
 cd airband_ai
+```
 
-Create virtual environment:
+If already cloned:
 
+```
+git submodule update --init --recursive
+```
+
+---
+
+### OS Dependencies
+
+```
+sudo apt update
+sudo apt install -y ffmpeg
+```
+
+---
+
+### Python Environment
+
+```
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements-min.txt
+```
 
-Environment Configuration
+---
 
-Create environment file:
+## Configuration
 
-sudo mkdir -p /etc/airband_ai
-sudo nano /etc/airband_ai/airband_ai.env
+Runtime secrets are not stored in the repository.
 
-Example contents:
+Recommended location:
 
+```
+/etc/airband_ai/airband_ai.env
+```
+
+Example:
+
+```
 GEMINI_API_KEY=your_api_key_here
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxxxx
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
 
-systemd Service
+---
 
-Airband AI is intended to run only via systemd.
+## systemd Example
 
-The service:
+```
+[Unit]
+Description=Airband AI (VHF Airband Transcription Daemon)
+After=network-online.target
+Wants=network-online.target
 
-Controls restarts
+[Service]
+Type=simple
+User=yuki
+Group=yuki
+WorkingDirectory=/home/yuki/projects/airband_ai
+EnvironmentFile=/etc/airband_ai/airband_ai.env
 
-Enforces Cost Guard behavior
+ExecStart=/home/yuki/projects/airband_ai/venv/bin/python3 \
+  /home/yuki/projects/airband_ai/main.py \
+  --input_dir /dev/shm/airband_ai_proc \
+  --output_dir /home/yuki/projects/airband_ai/recording/processed
 
-Manages persistent state using StateDirectory
+Restart=on-failure
+RestartPreventExitStatus=42
+RestartSec=10
 
-After installing the service file:
+[Install]
+WantedBy=multi-user.target
+```
 
-sudo systemctl daemon-reexec
-sudo systemctl daemon-reload
-sudo systemctl enable airband-ai.service
-sudo systemctl start airband-ai.service
+---
 
-Check status:
+## Emergency Detection
 
-systemctl status airband-ai.service
-journalctl -u airband-ai.service -f
+Discord notifications are sent only when emergency-like content is detected:
+- 121.5 MHz
+- Mayday / Pan-pan
+- Squawk 7700
 
-Failure Behavior (Design Contract)
+Routine traffic does not generate notifications.
 
-Temporary API failure: logged, file skipped
+---
 
-Invalid audio or noise-only input: discarded by VAD
-
-Gemini quota or cost limit exceeded: immediate safe stop
-
-Corrupted cost state: fail fast and stop
-
-Missing API key: fail fast on startup
-
-There are no silent retries and no infinite restart loops.
-
-Logging
-
-Application logs are written to run.log with rotation.
-Service lifecycle and crashes are recorded in systemd journal.
-
-This dual logging enables both operational monitoring and post-mortem analysis.
-
-Legal / Disclaimer
+## Legal Notice
 
 This project is for educational and experimental purposes only.
+Users are responsible for complying with local radio and privacy laws.
 
-Users are responsible for complying with local radio regulations, privacy laws, and API terms of service.
+---
 
-Do not use this system to record or distribute sensitive communications.
+## License
 
-License
-
-MIT License.
+MIT License
