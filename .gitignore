@@ -1,12 +1,23 @@
-__pycache__/
-*.pyc
-.venv/
-venv/
-.env
-run.log*
+# logs
 *.log
-daily_cost*.json
+run.log*
+daily_cost.json
+
+# transcripts & recordings
 transcripts/
 recording/
-*.wav
-*.mp3
+
+# runtime / state
+stats_history.json
+daily_stats_state.json
+
+# venv / cache
+.venv/
+__pycache__/
+
+# external projects (never track)
+../adsb-center/
+../adsb_monitor/
+../discord-bots/
+../ac_ir/
+../opt/

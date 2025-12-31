@@ -8,7 +8,7 @@ class CostCircuitBreaker:
     def __init__(self, limit_yen=300, webhook_url=None):
         self.limit_yen = limit_yen
         self.webhook_url = webhook_url
-        self.data_file = "daily_cost.json"
+        self.data_file = "/var/lib/airband_ai/daily_cost.json"
         
         # Current date string (e.g., "2023-10-27")
         self.current_date_str = datetime.date.today().isoformat()
@@ -17,12 +17,12 @@ class CostCircuitBreaker:
         self.current_yen = self._load_state()
         
         # ==========================================
-        # Gemini 1.5 Flash pricing (per 1M tokens)
-        # Input: $0.075 / Output: $0.30 (USD 1 = JPY 155)
+        # Gemini 2.5 Flash pricing (per 1M tokens)
+        # Input: $1.00 / Output: $2.50 (USD 1 = JPY 155)
         # ==========================================
         usd_jpy_rate = 155.0
-        self.INPUT_PRICE_PER_1M = 0.075 * usd_jpy_rate
-        self.OUTPUT_PRICE_PER_1M = 0.30 * usd_jpy_rate
+        self.INPUT_PRICE_PER_1M = 1.00 * usd_jpy_rate
+        self.OUTPUT_PRICE_PER_1M = 2.5 * usd_jpy_rate
 
     def _load_state(self):
         """Load cost from file. Reset to 0 when the date changes."""
@@ -94,7 +94,7 @@ class CostCircuitBreaker:
                 print(f"x Discord送信エラー: {e}")
         
         print("システムを安全に終了します...")
-        sys.exit(1)
+        sys.exit(42)
 
     # Extra: compatibility for calls from main.py
     def can_proceed(self):
