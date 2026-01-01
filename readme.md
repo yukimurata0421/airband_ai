@@ -1,3 +1,5 @@
+A systemd-first, cost-safe VHF airband transcription system for Raspberry Pi.
+
 # airband_ai
 
 AI-assisted VHF airband monitoring system designed for continuous operation on Raspberry Pi.
