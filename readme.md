@@ -31,9 +31,10 @@ Transcription results and processed audio are stored locally.
 Runtime artifacts are intentionally excluded from the repository.
 
 ---
-```text
-Architecture
 
+## Architecture
+
+```text
 RTL-SDR dongle
   |
   v
@@ -57,6 +58,7 @@ Optional:
   - Discord webhook notification (emergency-like content only)
   - systemd for 24/7 operation and auto-restart
 ```
+
 ---
 
 ## RAM Disk Usage
